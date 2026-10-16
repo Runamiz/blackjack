@@ -64,7 +64,7 @@ body {
 .chip.on { border-color: var(--brass); color: var(--brass); }
 
 /* 테이블 */
-#table { flex: 1; min-height: 0; display: flex; flex-direction: column; justify-content: center; gap: clamp(10px, 2.4vh, 26px); }
+#table { flex: 1; min-height: 0; display: flex; flex-direction: column; justify-content: safe center; gap: clamp(10px, 2.4vh, 26px); }
 .zone { display: flex; flex-direction: column; align-items: center; gap: 8px; }
 .label { font-size: 13px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-dim); display: flex; gap: 10px; align-items: baseline; }
 .total { font-family: var(--font-num); font-size: 20px; color: var(--ink); letter-spacing: 0; text-transform: none; }
@@ -88,11 +88,19 @@ body {
 
 #message { text-align: center; font-size: clamp(18px, 2.6vh, 26px); font-weight: 700; min-height: 1.3em; }
 
-#hands { display: flex; flex-wrap: wrap; justify-content: center; align-items: flex-start; gap: clamp(14px, 2.5vw, 40px); }
-#hands[data-many] { --cw: min(104px, 13vh, 7.4vw); --overlap: -0.46; }
-.hand { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 10px 12px; border-radius: 12px; border: 2px solid transparent; min-width: 0; }
+#hands { align-self: stretch; display: flex; justify-content: safe center; align-items: flex-start; gap: clamp(14px, 2.5vw, 40px); }
+#hands[data-many] { --overlap: -0.5; }
+#hands[data-many] .checks { font-size: 12px; gap: 1px; }
+#hands[data-many] .checks .ctx { font-size: 11px; }
+#hands[data-many] .checks li { gap: 5px; }
+#hands[data-many] .hand { padding: 8px 6px; }
+#hands[data-many] .total { font-size: 16px; }
+#hands[data-many] .result { font-size: 13px; }
+#hands[data-many] .meta { font-size: 12px; }
+.hand { flex: none; display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 10px 12px; border-radius: 12px; border: 2px solid transparent; }
 .hand.active { border-color: var(--brass); background: rgba(214, 178, 94, 0.08); }
-.hand .meta { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; justify-content: center; font-size: 14px; color: var(--ink-dim); }
+.hand .meta { display: flex; flex-direction: column; align-items: center; gap: 2px; font-size: 14px; color: var(--ink-dim); }
+.hand .meta .line { display: flex; gap: 10px; align-items: baseline; }
 .hand .result { font-weight: 700; font-size: 16px; }
 .pos { color: var(--good); }
 .neg { color: var(--bad); }
@@ -500,7 +508,7 @@ function render() {
     const result = h.result ? `<span class="result ${h.net > 0 ? 'pos' : h.net < 0 ? 'neg' : ''}">${h.result}${h.net ? ' ' + signed(h.net) : ''}</span>` : '';
     return `<div class="hand${i === G.active && G.phase === 'play' ? ' active' : ''}">
       <div class="cards">${h.cards.map(c => cardHTML(c)).join('')}</div>
-      <div class="meta"><span class="total">${totalLabel(h.cards)}</span><span>${tags.join(' · ')}</span>${result}</div>
+      <div class="meta"><span class="line"><span class="total">${totalLabel(h.cards)}</span>${result}</span><span>${tags.join(' · ')}</span></div>
       <ul class="checks">${checksHTML(G.decisions.filter(x => x.hand === i))}</ul>
     </div>`;
   }).join('') : '<div class="cards"></div>';
@@ -525,6 +533,29 @@ function render() {
   $('keys').innerHTML = keys;
 
   if (!$('overlay').hidden) renderStats();
+  fit();
+}
+
+// 카드가 많거나 핸드가 여러 개여도 스크롤 없이 들어가도록 카드 폭을 줄여 맞춘다.
+function fit() {
+  const table = document.getElementById('table');
+  const hands = document.getElementById('hands');
+  const kids = [...table.children];
+  const fits = () => {
+    const height = kids[kids.length - 1].getBoundingClientRect().bottom - kids[0].getBoundingClientRect().top;
+    let left = Infinity, right = -Infinity;
+    for (const h of hands.children) { const r = h.getBoundingClientRect(); left = Math.min(left, r.left); right = Math.max(right, r.right); }
+    return height <= table.clientHeight + 0.5 && (right - left <= hands.clientWidth + 0.5 || !hands.children.length);
+  };
+  const start = Math.min(140, innerHeight * 0.17, innerWidth * 0.1);
+  // 먼저 한 줄로 맞춰 보고, 폭이 모자라면 핸드를 여러 줄로 나눠 다시 맞춘다.
+  for (const [wrap, floor] of [['nowrap', 64], ['wrap', 36]]) {
+    hands.style.flexWrap = wrap;
+    let cw = start;
+    table.style.setProperty('--cw', cw + 'px');
+    while (!fits() && cw > floor) { cw -= 4; table.style.setProperty('--cw', cw + 'px'); }
+    if (fits()) return;
+  }
 }
 
 function renderStats() {
@@ -595,6 +626,7 @@ function onKey(e) {
 
 if (typeof document !== 'undefined') {
   document.addEventListener('keydown', onKey);
+  addEventListener('resize', fit);
   render();
 }
 </script>
