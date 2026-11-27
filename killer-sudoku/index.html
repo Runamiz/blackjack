@@ -1,0 +1,722 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Killer Sudoku">
+<title>Killer Sudoku</title>
+<style>
+/* 레이아웃: 가로 화면은 보드 왼쪽 + 컨트롤 오른쪽, 세로 화면은 보드 위 + 컨트롤 아래. 스크롤 없음. */
+:root {
+  --bg: #f4f1ea;
+  --panel: #fffdf8;
+  --ink: #1e2328;
+  --ink-dim: #6b7178;
+  --grid-thin: #c9c4b8;
+  --grid-thick: #2b3036;
+  --cage: #59606a;
+  --accent: #2f6fdf;
+  --accent-ink: #ffffff;
+  --sel: #bcd3fb;
+  --peer: #e6edf9;
+  --same: #c9dafa;
+  --user: #2457b8;
+  --err: #d23b2f;
+  --err-bg: #fbe0dc;
+  --line: #ddd7cb;
+  --font: -apple-system, "SF Pro Text", "Apple SD Gothic Neo", "Helvetica Neue", Arial, sans-serif;
+  --num: "SF Pro Rounded", -apple-system, "Helvetica Neue", Arial, sans-serif;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #15181c;
+    --panel: #1d2126;
+    --ink: #e9ecef;
+    --ink-dim: #9aa2ab;
+    --grid-thin: #3a4048;
+    --grid-thick: #c4cad1;
+    --cage: #8f98a3;
+    --accent: #5b93f5;
+    --accent-ink: #0c1424;
+    --sel: #2c4a7d;
+    --peer: #222a35;
+    --same: #2a3f63;
+    --user: #8db6ff;
+    --err: #ff6b5e;
+    --err-bg: #4a2420;
+    --line: #2e343b;
+    color-scheme: dark;
+  }
+}
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+[hidden] { display: none !important; }
+html, body { height: 100%; margin: 0; overflow: hidden; }
+body {
+  background: var(--bg); color: var(--ink); font-family: var(--font);
+  -webkit-user-select: none; user-select: none; touch-action: manipulation;
+  -webkit-text-size-adjust: 100%;
+}
+.app {
+  height: 100dvh; display: flex; align-items: center; justify-content: center;
+  gap: clamp(16px, 3vw, 40px);
+  padding: max(14px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(14px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+  --size: min(calc(100dvh - 40px), 60vw);
+}
+@media (orientation: portrait) {
+  .app { flex-direction: column; --size: min(calc(100vw - 32px), 62dvh); gap: 16px; }
+  .side { width: var(--size) !important; }
+}
+
+/* 보드 */
+.board {
+  width: var(--size); height: var(--size); flex: none;
+  display: grid; grid-template-columns: repeat(9, 1fr); grid-template-rows: repeat(9, 1fr);
+  border: 3px solid var(--grid-thick); border-radius: 6px; overflow: hidden;
+  background: var(--panel);
+  --cell: calc((var(--size) - 6px) / 9);
+}
+.cell {
+  position: relative; border-right: 1px solid var(--grid-thin); border-bottom: 1px solid var(--grid-thin);
+  display: flex; align-items: center; justify-content: center; cursor: pointer;
+}
+.cell.c8 { border-right: 0; }
+.cell.r8 { border-bottom: 0; }
+.cell.bx { border-right: 2px solid var(--grid-thick); }
+.cell.by { border-bottom: 2px solid var(--grid-thick); }
+.cell.peer { background: var(--peer); }
+.cell.same { background: var(--same); }
+.cell.sel { background: var(--sel); }
+.cell.cagehl .cl { border-color: var(--accent); }
+.cell.bad .val { color: var(--err); }
+.cell.cagebad { background: var(--err-bg); }
+.cl { position: absolute; border: 0 dashed var(--cage); pointer-events: none; }
+.sum {
+  position: absolute; top: 1px; left: 2px; z-index: 1;
+  font-size: calc(var(--cell) * 0.2); line-height: 1; font-weight: 600; color: var(--ink);
+  background: inherit; padding: 1px 2px; border-radius: 3px;
+}
+.cell > .sum { background: var(--panel); }
+.cell.peer > .sum { background: var(--peer); }
+.cell.same > .sum { background: var(--same); }
+.cell.sel > .sum { background: var(--sel); }
+.cell.cagebad > .sum { background: var(--err-bg); color: var(--err); }
+.val { font-family: var(--num); font-size: calc(var(--cell) * 0.58); font-weight: 500; color: var(--user); line-height: 1; }
+.val.hint { color: var(--ink); }
+.notes {
+  position: absolute; inset: 18% 6% 4% 6%;
+  display: grid; grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(3, 1fr);
+  font-size: calc(var(--cell) * 0.2); color: var(--ink-dim); line-height: 1;
+}
+.notes span { display: flex; align-items: center; justify-content: center; }
+.notes span.hl { color: var(--accent); font-weight: 700; }
+
+/* 컨트롤 */
+.side { width: min(380px, 34vw); display: flex; flex-direction: column; gap: 14px; flex: none; }
+.top { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.top h1 { margin: 0; font-size: 20px; font-weight: 700; letter-spacing: -0.01em; }
+.timer { font-family: var(--num); font-variant-numeric: tabular-nums; font-size: 18px; color: var(--ink-dim); }
+.row { display: flex; gap: 8px; }
+button {
+  font: inherit; color: var(--ink); background: var(--panel); border: 1px solid var(--line);
+  border-radius: 12px; padding: 10px 8px; cursor: pointer; touch-action: manipulation;
+}
+button:active { transform: scale(0.97); }
+.seg { display: flex; flex: 1; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 3px; }
+.seg button { flex: 1; border: 0; border-radius: 9px; padding: 8px 4px; font-size: 14px; background: transparent; }
+.seg button.on { background: var(--accent); color: var(--accent-ink); font-weight: 600; }
+.new { padding: 8px 14px; font-size: 14px; font-weight: 600; }
+.pad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.pad button {
+  aspect-ratio: 1.35; font-family: var(--num); font-size: clamp(24px, 3.4vw, 34px); font-weight: 500;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; line-height: 1; gap: 2px;
+}
+.pad button small { font-size: 11px; color: var(--ink-dim); font-family: var(--font); }
+.pad button.done { opacity: 0.3; }
+.notesmode .pad button { color: var(--ink-dim); font-size: clamp(18px, 2.4vw, 24px); }
+.tools { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.tools button { font-size: 13px; display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 8px 4px; }
+.tools button .ic { font-size: 20px; line-height: 1; }
+.tools button.on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.combo { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; min-height: 64px; font-size: 13px; }
+.combo .h { color: var(--ink-dim); margin-bottom: 6px; }
+.combo .list { display: flex; flex-wrap: wrap; gap: 6px; }
+.combo .list span { font-family: var(--num); font-variant-numeric: tabular-nums; padding: 2px 7px; border-radius: 6px; background: var(--peer); letter-spacing: 0.06em; }
+.combo .list span.no { opacity: 0.35; text-decoration: line-through; }
+@media (orientation: portrait) {
+  .side { gap: 10px; }
+  .pad { grid-template-columns: repeat(9, 1fr); gap: 6px; }
+  .pad button { aspect-ratio: 0.8; font-size: clamp(22px, 4.6vw, 34px); }
+  .tools { grid-template-columns: repeat(4, 1fr); }
+  .combo { min-height: 0; }
+}
+
+/* 오버레이 */
+.overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.45); display: flex; align-items: center; justify-content: center; z-index: 10; padding: 16px; }
+.dialog { background: var(--panel); border-radius: 18px; padding: 26px 28px; max-width: 420px; width: 100%; text-align: center; box-shadow: 0 20px 60px rgba(0,0,0,0.3); }
+.dialog h2 { margin: 0 0 8px; font-size: 24px; }
+.dialog p { margin: 0 0 18px; color: var(--ink-dim); line-height: 1.5; }
+.dialog .row { justify-content: center; }
+.dialog button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; padding: 12px 22px; }
+.help { text-align: left; font-size: 14px; line-height: 1.6; color: var(--ink); }
+.help kbd { font-family: var(--num); background: var(--peer); border-radius: 5px; padding: 1px 6px; font-size: 12px; }
+.help ul { padding-left: 18px; margin: 8px 0 16px; }
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <div class="board" id="board" aria-label="킬러 스도쿠 보드"></div>
+  <div class="side">
+    <div class="top">
+      <h1>Killer Sudoku</h1>
+      <span class="timer" id="timer">0:00</span>
+    </div>
+    <div class="row">
+      <div class="seg" id="diff">
+        <button data-d="easy">쉬움</button>
+        <button data-d="medium">보통</button>
+        <button data-d="hard">어려움</button>
+      </div>
+      <button class="new" id="newBtn">새 게임</button>
+    </div>
+    <div class="pad" id="pad"></div>
+    <div class="tools">
+      <button id="undoBtn"><span class="ic">↺</span>되돌리기</button>
+      <button id="eraseBtn"><span class="ic">⌫</span>지우기</button>
+      <button id="notesBtn"><span class="ic">✎</span>메모</button>
+      <button id="hintBtn"><span class="ic">💡</span>힌트</button>
+    </div>
+    <div class="combo" id="combo"></div>
+  </div>
+</div>
+
+<div class="overlay" id="busy" hidden><div class="dialog"><h2>퍼즐 생성 중…</h2><p>해가 하나뿐인 퍼즐을 만들고 있어요.</p></div></div>
+<div class="overlay" id="win" hidden>
+  <div class="dialog">
+    <h2>완성! 🎉</h2>
+    <p id="winText"></p>
+    <div class="row"><button class="primary" id="winNew">새 게임</button></div>
+  </div>
+</div>
+<div class="overlay" id="confirm" hidden>
+  <div class="dialog">
+    <h2>새 게임을 시작할까요?</h2>
+    <p>진행 중인 퍼즐은 사라집니다.</p>
+    <div class="row"><button id="cNo">취소</button><button class="primary" id="cYes">시작</button></div>
+  </div>
+</div>
+
+<script>
+'use strict';
+/* ---------- 기본 도구 ---------- */
+const $ = s => document.querySelector(s);
+const rnd = n => Math.floor(Math.random() * n);
+const shuffle = a => { for (let i = a.length - 1; i > 0; i--) { const j = rnd(i + 1); [a[i], a[j]] = [a[j], a[i]]; } return a; };
+const R = i => (i / 9) | 0, C = i => i % 9, B = i => ((R(i) / 3) | 0) * 3 + ((C(i) / 3) | 0);
+const NB = [];      // 상하좌우 이웃
+const PEERS = [];   // 같은 행/열/박스
+for (let i = 0; i < 81; i++) {
+  const n = [];
+  if (R(i) > 0) n.push(i - 9); if (R(i) < 8) n.push(i + 9);
+  if (C(i) > 0) n.push(i - 1); if (C(i) < 8) n.push(i + 1);
+  NB.push(n);
+  const p = [];
+  for (let j = 0; j < 81; j++) if (j !== i && (R(j) === R(i) || C(j) === C(i) || B(j) === B(i))) p.push(j);
+  PEERS.push(p);
+}
+const UNITS = [];
+for (let u = 0; u < 9; u++) {
+  UNITS.push([...Array(9).keys()].map(t => u * 9 + t));
+  UNITS.push([...Array(9).keys()].map(t => t * 9 + u));
+  UNITS.push([...Array(9).keys()].map(t => (((u / 3) | 0) * 3 + ((t / 3) | 0)) * 9 + (u % 3) * 3 + t % 3));
+}
+const POP = new Uint8Array(1024);
+for (let m = 1; m < 1024; m++) POP[m] = POP[m >> 1] + (m & 1);
+
+/* ---------- 퍼즐 생성 ---------- */
+function fullGrid() {
+  const g = new Array(81).fill(0), rm = new Array(9).fill(0), cm = new Array(9).fill(0), bm = new Array(9).fill(0);
+  (function fill(i) {
+    if (i === 81) return true;
+    const r = R(i), c = C(i), b = B(i);
+    for (const d of shuffle([1, 2, 3, 4, 5, 6, 7, 8, 9])) {
+      const bit = 1 << d;
+      if ((rm[r] | cm[c] | bm[b]) & bit) continue;
+      g[i] = d; rm[r] |= bit; cm[c] |= bit; bm[b] |= bit;
+      if (fill(i + 1)) return true;
+      rm[r] &= ~bit; cm[c] &= ~bit; bm[b] &= ~bit;
+    }
+    g[i] = 0; return false;
+  })(0);
+  return g;
+}
+
+const DIFF = {
+  easy:   { min: 2, max: 3, maxCage: 4 },
+  medium: { min: 2, max: 4, maxCage: 5 },
+  hard:   { min: 2, max: 4, maxCage: 6, mergeTo: 23 },
+};
+
+function makeCages(sol, cfg) {
+  const of = new Array(81).fill(-1);
+  let cages = [];
+  for (const s of shuffle([...Array(81).keys()])) {
+    if (of[s] >= 0) continue;
+    const target = cfg.min + rnd(cfg.max - cfg.min + 1);
+    const k = cages.length, cells = [s];
+    let used = 1 << sol[s]; of[s] = k;
+    while (cells.length < target) {
+      const opts = [];
+      for (const c of cells) for (const n of NB[c]) if (of[n] < 0 && !(used >> sol[n] & 1) && !opts.includes(n)) opts.push(n);
+      if (!opts.length) break;
+      const n = opts[rnd(opts.length)];
+      cells.push(n); of[n] = k; used |= 1 << sol[n];
+    }
+    cages.push(cells);
+  }
+  // 한 칸짜리 케이지는 가능하면 이웃 케이지에 합치기
+  for (let k = 0; k < cages.length; k++) {
+    if (cages[k].length !== 1) continue;
+    const s = cages[k][0];
+    for (const n of shuffle(NB[s].slice())) {
+      const t = of[n];
+      if (t === k || cages[t].length >= cfg.maxCage) continue;
+      if (cages[t].some(c => sol[c] === sol[s])) continue;
+      cages[t].push(s); of[s] = t; cages[k] = [];
+      break;
+    }
+  }
+  cages = cages.filter(c => c.length);
+  return cages;
+}
+
+function indexCages(cages) {
+  const of = new Array(81);
+  cages.forEach((cells, k) => cells.forEach(c => { of[c] = k; }));
+  return of;
+}
+
+// 합이 sum인 서로 다른 숫자 n개 조합(비트마스크) 목록
+const comboCache = {};
+function combos(sum, n) {
+  const key = sum + ':' + n;
+  if (comboCache[key]) return comboCache[key];
+  const out = [];
+  for (let m = 0; m < 1024; m += 2) {
+    if (POP[m] !== n) continue;
+    let s = 0; for (let d = 1; d <= 9; d++) if (m >> d & 1) s += d;
+    if (s === sum) out.push(m);
+  }
+  return (comboCache[key] = out);
+}
+
+// 케이지 제약을 포함한 백트래킹 솔버. limit개까지 해를 찾음.
+// 매 노드마다: 케이지별로 아직 가능한 조합의 합집합/교집합 → 칸 후보 → 행·열·박스·케이지의 숨은 싱글.
+function solve(cageCells, sums, of, limit, nodeLimit) {
+  const g = new Int8Array(81), rm = new Int16Array(9), cm = new Int16Array(9), bm = new Int16Array(9);
+  const K = cageCells.length, cUsed = new Int16Array(K), cAllow = new Int16Array(K), cReq = new Int16Array(K);
+  const CB = cageCells.map((cells, k) => combos(sums[k], cells.length));
+  const rI = [], cI = [], bI = [];
+  for (let i = 0; i < 81; i++) { rI.push(R(i)); cI.push(C(i)); bI.push(B(i)); }
+  const units = UNITS.concat(cageCells);
+  const cand = new Int16Array(81);
+  const sols = []; let nodes = 0, aborted = false;
+  function rec() {
+    if (++nodes > nodeLimit) { aborted = true; return; }
+    for (let k = 0; k < K; k++) {
+      const used = cUsed[k], list = CB[k];
+      let uni = 0, inter = 0x3FE;
+      for (let t = 0; t < list.length; t++) { const m = list[t]; if ((m & used) === used) { uni |= m; inter &= m; } }
+      if (!uni) return;
+      cAllow[k] = uni & ~used; cReq[k] = inter & ~used;
+    }
+    let best = -1, bmask = 0, bc = 10;
+    for (let i = 0; i < 81; i++) {
+      if (g[i]) continue;
+      const m = ~(rm[rI[i]] | cm[cI[i]] | bm[bI[i]]) & cAllow[of[i]];
+      if (!m) return;
+      cand[i] = m;
+      const pc = POP[m];
+      if (pc < bc) { bc = pc; best = i; bmask = m; }
+    }
+    if (best < 0) { sols.push(Array.from(g)); return; }
+    if (bc > 1) {
+      for (let u = 0; u < units.length && bc > 1; u++) {
+        const cells = units[u]; let once = 0, twice = 0, placed = 0;
+        for (let t = 0; t < cells.length; t++) {
+          const i = cells[t];
+          if (g[i]) { placed |= 1 << g[i]; continue; }
+          twice |= once & cand[i]; once |= cand[i];
+        }
+        const need = u < 27 ? 0x3FE & ~placed : cReq[u - 27];
+        if ((once & need) !== need) return;
+        const hid = once & ~twice & need;
+        if (hid) {
+          const d = 31 - Math.clz32(hid & -hid);
+          for (let t = 0; t < cells.length; t++) { const i = cells[t]; if (!g[i] && cand[i] >> d & 1) { best = i; bmask = 1 << d; bc = 1; break; } }
+        }
+      }
+    }
+    const i = best, k = of[i], r = rI[i], c = cI[i], b = bI[i];
+    for (let d = 1; d <= 9; d++) {
+      if (!(bmask >> d & 1)) continue;
+      const bit = 1 << d;
+      g[i] = d; rm[r] |= bit; cm[c] |= bit; bm[b] |= bit; cUsed[k] |= bit;
+      rec();
+      g[i] = 0; rm[r] &= ~bit; cm[c] &= ~bit; bm[b] &= ~bit; cUsed[k] &= ~bit;
+      if (sols.length >= limit || aborted) return;
+    }
+  }
+  rec();
+  return { sols, aborted, nodes };
+}
+
+function connectedParts(cells) {
+  const set = new Set(cells), seen = new Set(), parts = [];
+  for (const s of cells) {
+    if (seen.has(s)) continue;
+    const part = [s]; seen.add(s);
+    for (let q = 0; q < part.length; q++) for (const n of NB[part[q]]) if (set.has(n) && !seen.has(n)) { seen.add(n); part.push(n); }
+    parts.push(part);
+  }
+  return parts;
+}
+
+// 두 해가 다른 칸 하나를 이웃 케이지로 옮김 (원래 케이지가 2칸 이상 남고 연결이 유지될 때만)
+function reshape(cages, of, sol, diffCells, cfg) {
+  for (const c0 of shuffle(diffCells.slice())) {
+    const k = of[c0], src = cages[k];
+    if (src.length < 3) continue;
+    const rest = src.filter(c => c !== c0);
+    if (connectedParts(rest).length !== 1) continue;
+    for (const n of shuffle(NB[c0].slice())) {
+      const t = of[n];
+      if (t === k || cages[t].length >= cfg.maxCage || cages[t].some(c => sol[c] === sol[c0])) continue;
+      cages[k] = rest; cages[t].push(c0);
+      return true;
+    }
+  }
+  return false;
+}
+
+// 유일해를 유지하는 한 이웃 케이지끼리 합쳐서 케이지 수를 줄임 (어려움)
+function mergeCages(cages, sol, cfg) {
+  const t0 = performance.now();
+  let failsInRow = 0;
+  while (cages.length > cfg.mergeTo && failsInRow < 40 && performance.now() - t0 < 2500) {
+    const of = indexCages(cages);
+    const pairs = [];
+    cages.forEach((cells, k) => {
+      let used = 0; cells.forEach(c => { used |= 1 << sol[c]; });
+      for (const c of cells) for (const n of NB[c]) {
+        const t = of[n];
+        if (t <= k || cells.length + cages[t].length > cfg.maxCage) continue;
+        if (cages[t].some(x => used >> sol[x] & 1)) continue;
+        if (!pairs.some(p => p[0] === k && p[1] === t)) pairs.push([k, t, cells.length + cages[t].length]);
+      }
+    });
+    if (!pairs.length) break;
+    // 작은 케이지끼리 먼저 합치도록 가중
+    pairs.sort((a, b) => a[2] - b[2] + (Math.random() - 0.5) * 3);
+    const [k, t] = pairs[0];
+    const next = cages.filter((_, i) => i !== k && i !== t).concat([cages[k].concat(cages[t])]);
+    const res = solve(next, next.map(cs => cs.reduce((a, c) => a + sol[c], 0)), indexCages(next), 2, 60000);
+    if (!res.aborted && res.sols.length === 1) { cages = next; failsInRow = 0; } else failsInRow++;
+  }
+  return cages;
+}
+
+// 해가 여러 개면 두 해가 다른 칸이 든 케이지를 쪼개서 유일해가 될 때까지 반복
+function generate(diff) {
+  const cfg = DIFF[diff];
+  for (let attempt = 0; attempt < 60; attempt++) {
+    const sol = fullGrid();
+    let cages = makeCages(sol, cfg);
+    for (let iter = 0; iter < 30; iter++) {
+      const of = indexCages(cages);
+      const sums = cages.map(cs => cs.reduce((a, c) => a + sol[c], 0));
+      const res = solve(cages, sums, of, 2, 150000);
+      if (res.aborted) break;
+      if (res.sols.length === 1) {
+        if (cfg.mergeTo) cages = mergeCages(cages, sol, cfg);
+        const fs = cages.map(cs => cs.reduce((a, c) => a + sol[c], 0));
+        return { sol, cages: cages.map((cells, k) => ({ cells: cells.slice().sort((a, b) => a - b), sum: fs[k] })) };
+      }
+      const [a, b] = res.sols;
+      const diffCells = [];
+      for (let i = 0; i < 81; i++) if (a[i] !== b[i]) diffCells.push(i);
+      if (reshape(cages, of, sol, diffCells, cfg)) continue;
+      const c0 = diffCells[rnd(diffCells.length)], k = of[c0], cells = cages[k];
+      // c0에서 BFS로 절반을 떼어내고, 나머지는 연결 성분별로 나눔
+      const set = new Set(cells), half = [c0], seen = new Set([c0]);
+      const want = Math.max(1, Math.floor(cells.length / 2));
+      for (let q = 0; q < half.length && half.length < want; q++)
+        for (const n of shuffle(NB[half[q]].slice())) if (set.has(n) && !seen.has(n) && half.length < want) { seen.add(n); half.push(n); }
+      const rest = cells.filter(c => !seen.has(c));
+      cages.splice(k, 1, half, ...connectedParts(rest));
+    }
+  }
+  return null;
+}
+
+/* ---------- 상태 ---------- */
+const STORE = 'killer-sudoku-v1';
+let S = null;          // { diff, sol, cages, vals, notes, hinted, elapsed, done }
+let of = [];           // 칸 → 케이지 인덱스
+let sel = 40, notesMode = false, undo = [], lastTick = 0;
+
+function persist() { try { localStorage.setItem(STORE, JSON.stringify({ S, sel })); } catch (e) { /* 무시 */ } }
+function restore() {
+  try {
+    const raw = localStorage.getItem(STORE);
+    if (!raw) return false;
+    const d = JSON.parse(raw);
+    if (!d.S || !d.S.sol || d.S.vals.length !== 81) return false;
+    S = d.S; sel = d.sel ?? 40;
+    return true;
+  } catch (e) { return false; }
+}
+function prefDiff() { return S?.diff || 'medium'; }
+
+function newGame(diff) {
+  $('#busy').hidden = false;
+  setTimeout(() => {
+    let p = null;
+    for (let t = 0; !p && t < 5; t++) p = generate(diff);
+    $('#busy').hidden = true;
+    if (!p) { alert('퍼즐 생성에 실패했어요. 다시 시도해 주세요.'); return; }
+    S = { diff, sol: p.sol, cages: p.cages, vals: new Array(81).fill(0), notes: new Array(81).fill(0), hinted: [], elapsed: 0, done: false };
+    sel = 40; undo = []; notesMode = false;
+    setup(); persist();
+  }, 30);
+}
+
+/* ---------- 렌더링 ---------- */
+const board = $('#board'), cellEls = [];
+function setup() {
+  of = new Array(81);
+  S.cages.forEach((cg, k) => cg.cells.forEach(c => { of[c] = k; }));
+  board.innerHTML = ''; cellEls.length = 0;
+  const inset = 'calc(var(--cell) * 0.07)';
+  for (let i = 0; i < 81; i++) {
+    const r = R(i), c = C(i), k = of[i];
+    const el = document.createElement('div');
+    el.className = 'cell' + (c === 8 ? ' c8' : '') + (r === 8 ? ' r8' : '') + (c % 3 === 2 && c < 8 ? ' bx' : '') + (r % 3 === 2 && r < 8 ? ' by' : '');
+    const up = r > 0 && of[i - 9] === k, dn = r < 8 && of[i + 9] === k, lf = c > 0 && of[i - 1] === k, rt = c < 8 && of[i + 1] === k;
+    const cl = document.createElement('div');
+    cl.className = 'cl';
+    cl.style.top = up ? '-1px' : inset; cl.style.bottom = dn ? '-1px' : inset;
+    cl.style.left = lf ? '-1px' : inset; cl.style.right = rt ? '-1px' : inset;
+    cl.style.borderTopWidth = up ? '0' : '1.5px'; cl.style.borderBottomWidth = dn ? '0' : '1.5px';
+    cl.style.borderLeftWidth = lf ? '0' : '1.5px'; cl.style.borderRightWidth = rt ? '0' : '1.5px';
+    el.appendChild(cl);
+    if (S.cages[k].cells[0] === i) {
+      const s = document.createElement('span'); s.className = 'sum'; s.textContent = S.cages[k].sum; el.appendChild(s);
+    }
+    const v = document.createElement('div'); v.className = 'val'; el.appendChild(v);
+    const n = document.createElement('div'); n.className = 'notes';
+    for (let d = 1; d <= 9; d++) n.appendChild(document.createElement('span'));
+    el.appendChild(n);
+    el.addEventListener('pointerdown', e => { e.preventDefault(); sel = i; render(); persist(); });
+    board.appendChild(el); cellEls.push(el);
+  }
+  document.querySelectorAll('#diff button').forEach(b => b.classList.toggle('on', b.dataset.d === S.diff));
+  render();
+}
+
+function conflicts() {
+  const bad = new Set(), cageBad = new Set();
+  for (let i = 0; i < 81; i++) {
+    const v = S.vals[i]; if (!v) continue;
+    for (const j of PEERS[i]) if (S.vals[j] === v) { bad.add(i); break; }
+  }
+  S.cages.forEach((cg, k) => {
+    let sum = 0, filled = 0, seen = 0, dup = false;
+    for (const c of cg.cells) {
+      const v = S.vals[c]; if (!v) continue;
+      sum += v; filled++;
+      if (seen >> v & 1) dup = true; seen |= 1 << v;
+    }
+    if (dup) cg.cells.forEach(c => { if (S.vals[c] && cg.cells.some(o => o !== c && S.vals[o] === S.vals[c])) bad.add(c); });
+    if (sum > cg.sum || (filled === cg.cells.length && sum !== cg.sum) || (filled < cg.cells.length && sum >= cg.sum)) cageBad.add(k);
+  });
+  return { bad, cageBad };
+}
+
+function render() {
+  const { bad, cageBad } = conflicts();
+  const sv = S.vals[sel], sk = of[sel];
+  for (let i = 0; i < 81; i++) {
+    const el = cellEls[i], v = S.vals[i];
+    const peer = R(i) === R(sel) || C(i) === C(sel) || B(i) === B(sel);
+    el.classList.toggle('sel', i === sel);
+    el.classList.toggle('same', i !== sel && !!sv && v === sv);
+    el.classList.toggle('peer', i !== sel && peer && !(sv && v === sv));
+    el.classList.toggle('cagehl', of[i] === sk);
+    el.classList.toggle('bad', bad.has(i));
+    el.classList.toggle('cagebad', cageBad.has(of[i]));
+    const ve = el.querySelector('.val');
+    ve.textContent = v || '';
+    ve.classList.toggle('hint', S.hinted.includes(i));
+    const ns = el.querySelector('.notes').children, m = v ? 0 : S.notes[i];
+    for (let d = 1; d <= 9; d++) {
+      ns[d - 1].textContent = m >> d & 1 ? d : '';
+      ns[d - 1].classList.toggle('hl', !!sv && d === sv);
+    }
+  }
+  // 숫자 패드: 9개 다 놓은 숫자는 흐리게
+  const counts = new Array(10).fill(0);
+  S.vals.forEach(v => counts[v]++);
+  padBtns.forEach((b, idx) => {
+    const d = idx + 1;
+    b.classList.toggle('done', counts[d] >= 9);
+    b.querySelector('small').textContent = 9 - counts[d] > 0 ? 9 - counts[d] : '';
+  });
+  $('#notesBtn').classList.toggle('on', notesMode);
+  document.body.classList.toggle('notesmode', notesMode);
+  renderCombo();
+  renderTimer();
+}
+
+// 선택한 케이지의 합/칸수로 가능한 숫자 조합
+function renderCombo() {
+  const cg = S.cages[of[sel]];
+  let placed = 0; cg.cells.forEach(c => { if (S.vals[c]) placed |= 1 << S.vals[c]; });
+  const list = combos(cg.sum, cg.cells.length).map(m => {
+    let t = ''; for (let d = 1; d <= 9; d++) if (m >> d & 1) t += d;
+    return `<span class="${(placed & m) === placed ? '' : 'no'}">${t}</span>`;
+  }).join('');
+  $('#combo').innerHTML = `<div class="h">케이지 ${cg.sum} · ${cg.cells.length}칸 가능한 조합</div><div class="list">${list}</div>`;
+}
+
+function fmt(s) {
+  s = Math.floor(s);
+  const h = Math.floor(s / 3600), m = Math.floor(s / 60) % 60, ss = String(s % 60).padStart(2, '0');
+  return h ? `${h}:${String(m).padStart(2, '0')}:${ss}` : `${m}:${ss}`;
+}
+function renderTimer() { $('#timer').textContent = fmt(S.elapsed); }
+
+/* ---------- 입력 ---------- */
+function pushUndo(cells) { undo.push(cells.map(i => [i, S.vals[i], S.notes[i]])); if (undo.length > 500) undo.shift(); }
+
+function input(d) {
+  if (S.done) return;
+  const i = sel;
+  if (S.hinted.includes(i)) return;
+  if (notesMode) {
+    if (S.vals[i]) return;
+    pushUndo([i]);
+    S.notes[i] ^= 1 << d;
+  } else {
+    if (S.vals[i] === d) { pushUndo([i]); S.vals[i] = 0; }
+    else {
+      // 같은 행/열/박스의 메모에서 이 숫자를 자동으로 지움
+      const touched = PEERS[i].filter(j => S.notes[j] >> d & 1);
+      pushUndo([i, ...touched]);
+      S.vals[i] = d;
+      touched.forEach(j => { S.notes[j] &= ~(1 << d); });
+    }
+  }
+  after();
+}
+function erase() {
+  if (S.done || S.hinted.includes(sel)) return;
+  if (!S.vals[sel] && !S.notes[sel]) return;
+  pushUndo([sel]); S.vals[sel] = 0; S.notes[sel] = 0; after();
+}
+function doUndo() {
+  if (S.done) return;
+  const u = undo.pop(); if (!u) return;
+  u.forEach(([i, v, n]) => { S.vals[i] = v; S.notes[i] = n; });
+  S.hinted = S.hinted.filter(i => S.vals[i] === S.sol[i]);  // 힌트를 되돌리면 다시 입력 가능
+  sel = u[0][0]; after();
+}
+function hint() {
+  if (S.done) return;
+  let i = sel;
+  if (S.vals[i] === S.sol[i]) {
+    // 선택 칸이 이미 맞으면 비어 있거나 틀린 칸 중 하나
+    const cand = []; for (let j = 0; j < 81; j++) if (S.vals[j] !== S.sol[j]) cand.push(j);
+    if (!cand.length) return;
+    i = cand[rnd(cand.length)]; sel = i;
+  }
+  pushUndo([i]);
+  S.vals[i] = S.sol[i]; S.notes[i] = 0; S.hinted.push(i);
+  after();
+}
+function after() {
+  if (S.vals.every((v, i) => v === S.sol[i])) {
+    S.done = true;
+    const h = S.hinted.length;
+    $('#winText').textContent = `${{ easy: '쉬움', medium: '보통', hard: '어려움' }[S.diff]} · ${fmt(S.elapsed)}` + (h ? ` · 힌트 ${h}회` : ' · 힌트 없이 완료');
+    setTimeout(() => { $('#win').hidden = false; }, 250);
+  }
+  render(); persist();
+}
+function move(dr, dc) { sel = ((R(sel) + dr + 9) % 9) * 9 + (C(sel) + dc + 9) % 9; render(); persist(); }
+
+const padBtns = [];
+for (let d = 1; d <= 9; d++) {
+  const b = document.createElement('button');
+  b.innerHTML = `${d}<small></small>`;
+  b.addEventListener('click', () => input(d));
+  $('#pad').appendChild(b); padBtns.push(b);
+}
+$('#undoBtn').addEventListener('click', doUndo);
+$('#eraseBtn').addEventListener('click', erase);
+$('#notesBtn').addEventListener('click', () => { notesMode = !notesMode; render(); });
+$('#hintBtn').addEventListener('click', hint);
+
+let pendingDiff = null;
+function askNew(diff) {
+  pendingDiff = diff;
+  const playing = S && !S.done && S.vals.some(v => v);
+  if (playing) $('#confirm').hidden = false; else newGame(diff);
+}
+document.querySelectorAll('#diff button').forEach(b => b.addEventListener('click', () => askNew(b.dataset.d)));
+$('#newBtn').addEventListener('click', () => askNew(prefDiff()));
+$('#cNo').addEventListener('click', () => { $('#confirm').hidden = true; });
+$('#cYes').addEventListener('click', () => { $('#confirm').hidden = true; newGame(pendingDiff); });
+$('#winNew').addEventListener('click', () => { $('#win').hidden = true; newGame(S.diff); });
+
+document.addEventListener('keydown', e => {
+  if (!S || e.metaKey || e.ctrlKey || e.altKey) return;
+  if (!$('#confirm').hidden) {
+    if (e.key === 'Enter') $('#cYes').click(); else if (e.key === 'Escape') $('#cNo').click();
+    return;
+  }
+  if (!$('#win').hidden) { if (e.key === 'Enter') $('#winNew').click(); return; }
+  const k = e.key;
+  if (k >= '1' && k <= '9') input(+k);
+  else if (k === 'ArrowUp') move(-1, 0);
+  else if (k === 'ArrowDown') move(1, 0);
+  else if (k === 'ArrowLeft') move(0, -1);
+  else if (k === 'ArrowRight') move(0, 1);
+  else if (k === 'Backspace' || k === 'Delete' || k === '0') erase();
+  else if (k === 'n' || k === 'N' || k === ' ') { notesMode = !notesMode; render(); }
+  else if (k === 'z' || k === 'Z' || k === 'u' || k === 'U') doUndo();
+  else if (k === 'h' || k === 'H') hint();
+  else return;
+  e.preventDefault();
+});
+
+/* ---------- 타이머 ---------- */
+setInterval(() => {
+  const now = performance.now();
+  if (S && !S.done && !document.hidden && $('#busy').hidden && lastTick) {
+    S.elapsed += (now - lastTick) / 1000;
+    renderTimer();
+    if (Math.floor(S.elapsed) % 5 === 0) persist();
+  }
+  lastTick = now;
+}, 500);
+document.addEventListener('visibilitychange', () => { lastTick = performance.now(); persist(); });
+
+/* ---------- 시작 ---------- */
+if (restore()) setup(); else newGame('medium');
+</script>
+</body>
+</html>
