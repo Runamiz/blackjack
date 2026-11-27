@@ -335,9 +335,10 @@ function fullGrid() {
 }
 
 const DIFF = {
-  easy:   { min: 2, max: 3, maxCage: 4 },
-  medium: { min: 2, max: 4, maxCage: 5 },
-  hard:   { min: 2, max: 4, maxCage: 6, mergeTo: 23 },
+  // maxCage: 케이지 최대 칸 수, singles: 1칸 케이지 최소 개수
+  easy:   { min: 2, max: 3, maxCage: 3, singles: 2 },
+  medium: { min: 2, max: 4, maxCage: 4, singles: 1 },
+  hard:   { min: 2, max: 4, maxCage: 5, singles: 1, mergeTo: 25 },
 };
 
 function makeCages(sol, cfg) {
@@ -486,7 +487,7 @@ function reshape(cages, of, sol, diffCells, cfg) {
 function mergeCages(cages, sol, cfg) {
   const t0 = performance.now();
   let failsInRow = 0;
-  while (cages.length > cfg.mergeTo && failsInRow < 40 && performance.now() - t0 < 2500) {
+  while (cages.length > cfg.mergeTo && failsInRow < 40 && performance.now() - t0 < 1500) {
     const of = indexCages(cages);
     const pairs = [];
     cages.forEach((cells, k) => {
@@ -509,6 +510,27 @@ function mergeCages(cages, sol, cfg) {
   return cages;
 }
 
+// 1칸 케이지가 최소 개수보다 적으면 큰 케이지에서 한 칸을 떼어냄.
+// 케이지를 쪼개면 조건이 늘기만 하므로 유일해는 그대로 유지됨.
+function ensureSingles(cages, need) {
+  let have = cages.filter(c => c.length === 1).length;
+  while (have < need) {
+    const opts = [];
+    cages.forEach((cells, k) => {
+      if (cells.length < 3) return;   // 남는 쪽이 1칸이 되지 않도록
+      for (const c of cells) {
+        const rest = cells.filter(x => x !== c);
+        if (connectedParts(rest).length === 1) opts.push([k, c, rest]);
+      }
+    });
+    if (!opts.length) break;
+    const [k, c, rest] = opts[rnd(opts.length)];
+    cages.splice(k, 1, rest, [c]);
+    have++;
+  }
+  return cages;
+}
+
 // 해가 여러 개면 두 해가 다른 칸이 든 케이지를 쪼개서 유일해가 될 때까지 반복
 function generate(diff) {
   const cfg = DIFF[diff];
@@ -522,6 +544,7 @@ function generate(diff) {
       if (res.aborted) break;
       if (res.sols.length === 1) {
         if (cfg.mergeTo) cages = mergeCages(cages, sol, cfg);
+        cages = ensureSingles(cages, cfg.singles);
         const fs = cages.map(cs => cs.reduce((a, c) => a + sol[c], 0));
         return { sol, cages: cages.map((cells, k) => ({ cells: cells.slice().sort((a, b) => a - b), sum: fs[k] })) };
       }
