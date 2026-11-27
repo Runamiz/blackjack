@@ -8,14 +8,15 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="Killer Sudoku">
 <title>Killer Sudoku</title>
+<meta name="claude:viewport-fit-sides" content="cover">
 <style>
 /* 레이아웃: 가로 화면은 보드 왼쪽 + 컨트롤 오른쪽, 세로 화면은 보드 위 + 컨트롤 아래. 스크롤 없음. */
 :root {
-  --bg: #f4f1ea;
-  --panel: #fffdf8;
+  --bg: #e9edf2;
+  --panel: #fbfcfe;
   --ink: #1e2328;
   --ink-dim: #6b7178;
-  --grid-thin: #c9c4b8;
+  --grid-thin: #c6ccd5;
   --grid-thick: #2b3036;
   --cage: #59606a;
   --accent: #2f6fdf;
@@ -26,13 +27,13 @@
   --user: #2457b8;
   --err: #d23b2f;
   --err-bg: #fbe0dc;
-  --line: #ddd7cb;
+  --line: #d3d9e1;
   --font: -apple-system, "SF Pro Text", "Apple SD Gothic Neo", "Helvetica Neue", Arial, sans-serif;
   --num: "SF Pro Rounded", -apple-system, "Helvetica Neue", Arial, sans-serif;
   color-scheme: light;
 }
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     --bg: #15181c;
     --panel: #1d2126;
     --ink: #e9ecef;
@@ -52,6 +53,25 @@
     color-scheme: dark;
   }
 }
+:root[data-theme="dark"] {
+  --bg: #15181c;
+  --panel: #1d2126;
+  --ink: #e9ecef;
+  --ink-dim: #9aa2ab;
+  --grid-thin: #3a4048;
+  --grid-thick: #c4cad1;
+  --cage: #8f98a3;
+  --accent: #5b93f5;
+  --accent-ink: #0c1424;
+  --sel: #2c4a7d;
+  --peer: #222a35;
+  --same: #2a3f63;
+  --user: #8db6ff;
+  --err: #ff6b5e;
+  --err-bg: #4a2420;
+  --line: #2e343b;
+  color-scheme: dark;
+}
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 [hidden] { display: none !important; }
 html, body { height: 100%; margin: 0; overflow: hidden; }
@@ -61,9 +81,11 @@ body {
   -webkit-text-size-adjust: 100%;
 }
 .app {
-  height: 100dvh; display: flex; align-items: center; justify-content: center;
+  height: 100%; display: flex; align-items: center; justify-content: center;
   gap: clamp(16px, 3vw, 40px);
-  padding: max(14px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(14px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+  padding-block: max(14px, env(safe-area-inset-top, 0px)) max(14px, env(safe-area-inset-bottom, 0px));
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
   --size: min(calc(100dvh - 40px), 60vw);
 }
 @media (orientation: portrait) {
@@ -194,6 +216,13 @@ button:active { transform: scale(0.97); }
 </div>
 
 <div class="overlay" id="busy" hidden><div class="dialog"><h2>퍼즐 생성 중…</h2><p>해가 하나뿐인 퍼즐을 만들고 있어요.</p></div></div>
+<div class="overlay" id="failed" hidden>
+  <div class="dialog">
+    <h2>퍼즐을 만들지 못했어요</h2>
+    <p>다시 시도하면 대부분 바로 만들어집니다.</p>
+    <div class="row"><button class="primary" id="retry">다시 시도</button></div>
+  </div>
+</div>
 <div class="overlay" id="win" hidden>
   <div class="dialog">
     <h2>완성! 🎉</h2>
@@ -487,7 +516,7 @@ function newGame(diff) {
     let p = null;
     for (let t = 0; !p && t < 5; t++) p = generate(diff);
     $('#busy').hidden = true;
-    if (!p) { alert('퍼즐 생성에 실패했어요. 다시 시도해 주세요.'); return; }
+    if (!p) { lastFailed = diff; $('#failed').hidden = false; return; }
     S = { diff, sol: p.sol, cages: p.cages, vals: new Array(81).fill(0), notes: new Array(81).fill(0), hinted: [], elapsed: 0, done: false };
     sel = 40; undo = []; notesMode = false;
     setup(); persist();
@@ -670,7 +699,8 @@ $('#eraseBtn').addEventListener('click', erase);
 $('#notesBtn').addEventListener('click', () => { notesMode = !notesMode; render(); });
 $('#hintBtn').addEventListener('click', hint);
 
-let pendingDiff = null;
+let pendingDiff = null, lastFailed = 'medium';
+$('#retry').addEventListener('click', () => { $('#failed').hidden = true; newGame(lastFailed); });
 function askNew(diff) {
   pendingDiff = diff;
   const playing = S && !S.done && S.vals.some(v => v);
