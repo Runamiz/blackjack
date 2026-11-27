@@ -260,10 +260,10 @@ button.stat { text-align: left; }
     <div class="toggles" id="toggles"></div>
     <div class="sechead">키보드 · 트랙패드</div>
     <div class="keys">
-      <kbd>1–9</kbd><span>숫자 입력 (같은 숫자를 다시 누르면 지움)</span>
-      <kbd>Shift + 1–9</kbd><span>메모로 입력</span>
+      <kbd>123 · QWE · ASD</kbd><span>1–9 입력 (숫자 키도 됨, 같은 숫자를 다시 누르면 지움)</span>
+      <kbd>Shift + 위 키</kbd><span>메모로 입력</span>
       <kbd>N</kbd><span>메모 모드 켜기/끄기</span>
-      <kbd>방향키</kbd><span>칸 이동 (트랙패드로 클릭해도 선택)</span>
+      <kbd>I J K L · 방향키</kbd><span>칸 이동 (트랙패드로 클릭해도 선택)</span>
       <kbd>Backspace</kbd><span>지우기</span>
       <kbd>Z · ⌘Z</kbd><span>실행 취소</span>
       <kbd>H</kbd><span>힌트</span>
@@ -546,7 +546,7 @@ function generate(diff) {
 const TOGGLES = [
   ['noMistakes', '실수 표시 안 함', '끄면 정답과 다른 숫자를 빨간색으로 표시', true],
   ['dupes', '중복 숫자 강조', '행·열·블록에 같은 숫자가 있으면 칸을 붉게, 케이지 합이 넘치면 합을 빨갛게', true],
-  ['peers', '선택한 칸의 행·열·블록 강조', '', true],
+  ['peers', '선택한 칸의 행·열 강조', '', true],
   ['sameNum', '같은 숫자 강조', '선택한 칸과 같은 숫자와 메모를 강조', true],
   ['hideDone', '9개를 모두 채운 숫자 숨기기', '숫자 버튼에서 숨김', true],
   ['autoNotes', '메모 자동 지우기', '숫자를 넣으면 같은 행·열·블록의 메모에서 그 숫자를 지움', true],
@@ -677,7 +677,7 @@ function render() {
     const isSame = OPT.sameNum && i !== sel && !!sv && v === sv;
     el.classList.toggle('sel', i === sel);
     el.classList.toggle('same', isSame);
-    el.classList.toggle('peer', OPT.peers && i !== sel && !isSame && (R(i) === R(sel) || C(i) === C(sel) || B(i) === B(sel)));
+    el.classList.toggle('peer', OPT.peers && i !== sel && !isSame && (R(i) === R(sel) || C(i) === C(sel)));
     el.classList.toggle('dup', OPT.dupes && i !== sel && dup.has(i));
     const sumEl = el.querySelector('.sum');
     if (sumEl) sumEl.classList.toggle('bad', OPT.dupes && cageBad.has(of[i]));
@@ -825,6 +825,12 @@ document.querySelectorAll('.overlay').forEach(o => o.addEventListener('pointerdo
 }));
 
 /* 키보드 */
+// 1 2 3 / Q W E / A S D → 1–9, I J K L → 방향키
+const LETTER_DIGIT = { KeyQ: 4, KeyW: 5, KeyE: 6, KeyA: 7, KeyS: 8, KeyD: 9 };
+const ARROW = {
+  ArrowUp: [-1, 0], ArrowDown: [1, 0], ArrowLeft: [0, -1], ArrowRight: [0, 1],
+  KeyI: [-1, 0], KeyK: [1, 0], KeyJ: [0, -1], KeyL: [0, 1],
+};
 document.addEventListener('keydown', e => {
   if (!S) return;
   const open = [...document.querySelectorAll('.overlay')].find(o => !o.hidden);
@@ -837,14 +843,13 @@ document.addEventListener('keydown', e => {
   }
   if ((e.metaKey || e.ctrlKey) && (e.key === 'z' || e.key === 'Z') && !e.shiftKey) { e.preventDefault(); doUndo(); return; }
   if (e.metaKey || e.ctrlKey || e.altKey) return;
+  // 물리 키 위치(e.code) 기준이라 한글 입력 상태에서도 동작
   const m = /^(Digit|Numpad)([1-9])$/.exec(e.code);
-  const digit = m ? +m[2] : (e.key >= '1' && e.key <= '9' ? +e.key : 0);
+  const digit = m ? +m[2] : LETTER_DIGIT[e.code] || (e.key >= '1' && e.key <= '9' ? +e.key : 0);
+  const arrow = ARROW[e.key] || ARROW[e.code];
   const k = e.key.toLowerCase();
   if (digit) input(digit, notesMode || e.shiftKey);
-  else if (e.key === 'ArrowUp') move(-1, 0);
-  else if (e.key === 'ArrowDown') move(1, 0);
-  else if (e.key === 'ArrowLeft') move(0, -1);
-  else if (e.key === 'ArrowRight') move(0, 1);
+  else if (arrow) move(arrow[0], arrow[1]);
   else if (e.key === 'Backspace' || e.key === 'Delete' || e.key === '0') erase();
   else if (k === 'n' || k === 'ㅜ') toggleNotes();
   else if (k === 'z' || k === 'ㅋ') doUndo();
